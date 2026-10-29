@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Tailwind 4：暗色用 .dark 类切换（由应用控制，不跟随系统），主题状态在 store/ui.ts */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+/*
+ * M10.2-1「改字号没用」的真正修法：把 Tailwind 的字号档位改成**由 `--font-size-base` 派生**。
+ *
+ * 之前为什么没用：`--font-size-base` 只挂在 `body` 的 `font-size` 上，而界面里到处是
+ * `text-sm`（= `0.875rem`，rem 跟的是 `<html>` 的 16px、**不是** body 的字号），
+ * 编辑器里又写死了 `fontSize: "14px"` → 设置里换档位，能变的只有 body 那一层，看不出来。
+ *
+ * 现在这些档位的数值全部按 `--font-size-base` 线性算出，系数就是 Tailwind 默认值 ÷ 16px
+ * （0.75 / 0.875 / 1 / 1.125 / 1.25 / 1.5 / 1.875 / 2.25），所以：
+ *   · `--font-size-base` = 16px（默认档）时，渲染结果和改之前**逐像素一致**；
+ *   · 换档位则这一整排一起等比例变（侧栏、卡片、列表、预览、编辑器都吃这些档位）。
+ * ⚠️ `line-height` 必须一起派生 —— 否则字号变大而行高不动，几行文字会挤在一起。
+ * ⚠️ `calc` 里带兜底 `16px`：`applyFonts` 还没跑（配置还没读回来）时变量不存在，
+ *    没有兜底会让整条 `font-size` 失效 → 字号掉回继承值，整页忽大忽小。
+ * ⚠️ **别把这套套到树状图节点上**：树节点是 `text-[13px]`（任意值，不在这儿），
+ *    因为 `features/tree/layout.ts` 的 `NODE_FONT_PX = 13` 是**按 13px 量宽度算布局**的，
+ *    字号一动就和实际渲染对不上 → 文字溢出卡片。细字（`text-[10px]` / `text-[11px]`）同理不动。
+ */
+@theme {
+  --text-xs: calc(var(--font-size-base, 16px) * 0.75);
+  --text-xs--line-height: calc(var(--font-size-base, 16px) * 1);
+  --text-sm: calc(var(--font-size-base, 16px) * 0.875);
+  --text-sm--line-height: calc(var(--font-size-base, 16px) * 1.25);
+  --text-base: calc(var(--font-size-base, 16px) * 1);
+  --text-base--line-height: calc(var(--font-size-base, 16px) * 1.5);
+  --text-lg: calc(var(--font-size-base, 16px) * 1.125);
+  --text-lg--line-height: calc(var(--font-size-base, 16px) * 1.75);
+  --text-xl: calc(var(--font-size-base, 16px) * 1.25);
+  --text-xl--line-height: calc(var(--font-size-base, 16px) * 1.75);
+  --text-2xl: calc(var(--font-size-base, 16px) * 1.5);
+  --text-2xl--line-height: calc(var(--font-size-base, 16px) * 2);
+  --text-3xl: calc(var(--font-size-base, 16px) * 1.875);
+  --text-3xl--line-height: calc(var(--font-size-base, 16px) * 2.25);
+  --text-4xl: calc(var(--font-size-base, 16px) * 2.25);
+  --text-4xl--line-height: calc(var(--font-size-base, 16px) * 2.5);
+}
+
+/* 字号变量的兜底值（`applyFonts` 会用 `<html>` 的行内样式盖掉它，见 shared/fonts.ts） */
+:root {
+  --font-size-base: 16px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* 应用是整窗布局，滚动交给内容区 */
+  overflow: hidden;
+  /*
+   * M7：字体与字号由设置驱动（`shared/fonts.ts` 把值挂到 <html> 上）。
+   * 这里用 `var(..., 兜底)` 的写法：用户没设过就直接走默认，不需要预定义变量。
+   */
+  font-family: var(--font-ui, var(--font-sans));
+  font-size: var(--font-size-base, 16px);
+  /* 界面不用像素风：禁用图片缩放锯齿，保持平滑 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * 正文字体（PRD §5.5 把「界面字体」和「正文字体」分开列）：
+ * 编辑器与 Markdown 预览用 `--font-body`，没设就跟着界面字体。
+ * 用 `!important` 是因为 CodeMirror 会给 `.cm-content` 自己写 font-family。
+ */
+.cm-content,
+.markdown-preview {
+  font-family: var(--font-body, var(--font-ui, var(--font-sans))) !important;
+}

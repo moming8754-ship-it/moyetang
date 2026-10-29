@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主窗 + 快捷小窗（M6）+ 专注小窗（M13-A）。后两个都是运行时才创建的，但 capability 按 label 匹配，所以这里要显式写上 small / focus。M13-C 起专注小窗还要能自己调高度（按内容长高、且长高时往上顶），所以多放行了 set-size / set-position / 以及读位置与缩放要用的几个。",
+  "windows": ["main", "small", "small-*", "focus", "widget"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-scale-factor",
+    "core:window:allow-outer-position",
+    "core:window:allow-inner-size",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "notification:default"
+  ]
+}

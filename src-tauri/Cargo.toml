@@ -1,0 +1,103 @@
+[package]
+name = "notes-app"
+# ⚠️ 版本号的**单一来源**是 `tauri.conf.json` 的 `version`（`app_info` 读的是它）；
+#    这里和 `package.json` 跟着它一起改，三处永远是同一个号（现在是 v2.21.1 · 用户反馈第 2c 条：信息区与待办那两处「收进档案库」入口按用户要求去掉 —— 入口只留「认知区笔记」与档案库自己的「＋ 新建」）。
+version = "2.24.3"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "notes_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# image-png：运行期按白天/夜晚切换窗口图标需要从 PNG 字节构造 Image
+# protocol-asset：让前端能用 convertFileSrc 直接显示数据目录里的图片（M2 拖入图片）
+# ⚠️ M17（2.0.0）：`tray-icon` 挪进最下面的「桌面专属」段 —— 手机上 `tauri::tray` / `tauri::menu`
+#    根本不存在，feature 开着安卓目标就编译不过（实测 27 个错）。
+tauri = { version = "2", features = ["image-png", "protocol-asset"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+# 信息/笔记等条目的 id（v4 随机 uuid）
+uuid = { version = "1", features = ["v4"] }
+# 从剪贴板粘贴图片：前端只能给 base64（1MB 图走 JSON 数字数组要 4MB+，白烧 IPC）
+# 注：base64 早就在依赖树里（tauri 自己带着），所以这条不会拉新包
+base64 = "0.22"
+tauri-plugin-dialog = "2.7.3"
+# B3（2026-10-07）：系统通知 —— 手机上让「信息区 45 分钟没联动」这类提醒能在通知栏看见
+tauri-plugin-notification = "2.5.1"
+# 备份/导入导出打 zip（跨平台：手机上也要用）
+zip = "8.6.0"
+# M22：电脑端「同步入口」的临时服务（只在点开始同步→结束之间活着）+ 二维码由代码生成（不许用占位图）
+tiny_http = "0.12"
+# M23：手机/客户端那一侧的 HTTP（阻塞式、依赖轻，跟现有 store 架构一致）
+ureq = "2"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+
+# ─────────────────────── 桌面专属依赖（M17 / 2.0.0）───────────────────────
+# 手机上**没有**这些东西：托盘图标、全局快捷键、开机自启、单实例锁。
+# 不分开写，安卓目标直接编译不过（tray/menu/global_shortcut/autostart 全都找不到）。
+# ⚠️ 对应的代码也都做了门控：模块级 `#[cfg(desktop)]` + 命令体里分平台
+#    （见 lib.rs 顶部注释）。手机上调用这些命令会拿到一句明确的中文错误，
+#    而不是"命令不存在"这种看不出所以然的东西。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# tray-icon：M10 托盘常驻（托盘图标 + 右键菜单 + 气泡通知）
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+# 防止多开导致数据互相覆盖（约定：M0 就注册）
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2.3.2"
+# M10-6：开机自启（写注册表 Run 项）。⚠️ 启动时带上 `--autostart` 参数 →
+# 应用据此判断"这次是自启"，直接收进托盘（见 lib.rs 的 setup）。
+tauri-plugin-autostart = "2"
+
+# M10 托盘气泡通知：tauri 2.11.5 与 tray-icon 0.24.2 都**没有**气泡 API
+# （tray-icon 的 Win32 实现只用 NIF_ICON / NIF_MESSAGE / NIF_TIP / NIF_STATE），
+# 所以直接调 Win32 的 Shell_NotifyIconW + NIF_INFO。
+# 注：windows-sys 本来就在依赖树里（tray-icon 自己用它），这条不拉新包。
+# M13-B 专注「意外中断」判定（focus.rs）追加的三个 feature：
+#   Win32_UI_Input_KeyboardAndMouse → GetLastInputInfo / LASTINPUTINFO（键鼠空闲多久）
+#   Win32_System_SystemInformation  → GetTickCount（32 位毫秒，配 wrapping_sub 用）
+#   Win32_System_StationsAndDesktops → OpenInputDesktop / CloseDesktop（是不是锁着屏）
+# 只补用到的：多补一个 feature 就是白白多编译一堆绑定。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_SystemInformation",
+  "Win32_System_StationsAndDesktops",
+  "Win32_System_Registry",
+] }
+
+
+# ─────────────────────── 安卓专属依赖（M27 / 2.18.0）───────────────────────
+# 把导出的文件写进手机「下载/东方摩耶堂/」：安卓 10+ 的分区存储**不许**普通应用直接写
+# `/sdcard/Download`，唯一干净的路是 MediaStore 插入 —— 那只能 Kotlin 干，
+# 所以 Rust 侧用 JNI 调我们自己的一小段 Kotlin（`src/android.rs` ↔
+# `gen/android/.../DownloadSaver.kt`）。**没有引入任何第三方插件**
+# （免得再撞一次 Tauri 的版本对齐问题，见进度 §三 2k）。
+# 注：jni / ndk-context 本来就在依赖树里（tauri / wry 自己带着），不是新包。
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
